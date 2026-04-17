@@ -80,7 +80,7 @@ const ProductDetail = ({ token }) => {
   const navigate = useNavigate();
 
   const currentUserId = token ? JSON.parse(atob(token.split('.')[1])).userId : null;
-  const SECURITY_DEPOSIT = 500; // Adjusted for INR
+  const SECURITY_DEPOSIT = 500;
 
   useEffect(() => { fetch(`https://easy-renting-api.onrender.com/api/items/${id}`).then(res => res.json()).then(setItem); }, [id]);
 
@@ -111,7 +111,7 @@ const ProductDetail = ({ token }) => {
     const orderData = await orderResponse.json();
 
     const options = {
-      key: 'rzp_test_SeWuMDlMo3ENSg', // ⚠️ ADD YOUR RAZORPAY KEY ID HERE
+      key: 'rzp_test_SeWuMDlMo3ENSg',
       amount: orderData.amount,
       currency: orderData.currency,
       name: "EasyRenting",
@@ -123,7 +123,7 @@ const ProductDetail = ({ token }) => {
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ 
             itemId: item._id, 
-            sellerId: item.user?._id || item.user, // FALLBACK ADDED HERE
+            sellerId: item.user?._id || item.user,
             totalPrice: calcTotal(), 
             startDate: dates.start, 
             endDate: dates.end,
@@ -207,13 +207,51 @@ const MyListings = ({ token }) => {
   useEffect(() => { if (token) fetchMyItems(); }, [token]);
 
   const handleSave = async (e) => {
-    e.preventDefault(); setIsUploading(true);
-    const fd = new FormData(); Object.keys(formData).forEach(k => fd.append(k, formData[k]));
-    previews.forEach(u => { if (u.startsWith('http')) fd.append('existingImages', u); });
-    selectedImages.forEach(f => fd.append('images', f));
-    const url = editingId ? `https://easy-renting-api.onrender.com/api/items/${editingId}` : 'https://easy-renting-api.onrender.com/api/items';
-    await fetch(url, { method: editingId ? 'PUT' : 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
-    setEditingId(null); setFormData({title:'', description:'', pricePerDay:'', quantity:'1', category: 'Other'}); setPreviews([]); setSelectedImages([]); fetchMyItems(); setIsUploading(false);
+    e.preventDefault(); 
+    setIsUploading(true);
+    
+    try {
+      const fd = new FormData();
+
+      // 1. Safely add all text fields, ignoring any accidental image fields
+      Object.keys(formData).forEach(key => {
+        if (key !== 'image' && key !== 'images') {
+          fd.append(key, formData[key]);
+        }
+      });
+
+      // 2. Append the exact 'images' key for Multer array processing
+      selectedImages.forEach((file) => {
+        fd.append('images', file); 
+      });
+
+      const url = editingId ? `https://easy-renting-api.onrender.com/api/items/${editingId}` : 'https://easy-renting-api.onrender.com/api/items';
+      
+      const response = await fetch(url, { 
+        method: editingId ? 'PUT' : 'POST', 
+        headers: { 
+          'Authorization': `Bearer ${token}` 
+          // Notice there is NO 'Content-Type' here! The browser handles it for files.
+        }, 
+        body: fd 
+      });
+
+      if (response.ok) {
+        setEditingId(null); 
+        setFormData({title:'', description:'', pricePerDay:'', quantity:'1', category: 'Other'}); 
+        setPreviews([]); 
+        setSelectedImages([]); 
+        fetchMyItems(); 
+      } else {
+        const errData = await response.json();
+        alert(`Error: ${errData.message || "Failed to upload item"}`);
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      alert("Something went wrong during upload. Check console.");
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleDelete = async (id) => {
@@ -362,7 +400,7 @@ function App() {
             <Link to="/">Explore</Link>
             {token ? (
               <>
-                <Link to="/owner-dashboard">Dashboard</Link>  {/* NEW LINK */}
+                <Link to="/owner-dashboard">Dashboard</Link>
                 <Link to="/my-listings">Manage Store</Link>
                 <Link to="/my-rentals">My Rentals</Link>
                 <button onClick={() => { localStorage.removeItem('token'); setToken(null); }} className="btn-logout">Logout</button>
@@ -378,7 +416,6 @@ function App() {
           <Route path="/item/:id" element={<ProductDetail token={token} />} />
           <Route path="/my-listings" element={token ? <MyListings token={token} /> : <Auth setToken={setToken} />} />
           <Route path="/my-rentals" element={token ? <MyRentals token={token} /> : <Auth setToken={setToken} />} />
-          {/* NEW ROUTE */}
           <Route path="/owner-dashboard" element={token ? <OwnerDashboard token={token} /> : <Auth setToken={setToken} />} />
         </Routes>
       </main>
