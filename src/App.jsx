@@ -95,28 +95,37 @@ const ProductDetail = ({ token }) => {
   const SECURITY_DEPOSIT = 500;
 
   useEffect(() => { 
-    // Fetch Item Details
+    // 1. Fetch Item Details
     fetch(`https://easy-renting-api.onrender.com/api/items/${id}`)
       .then(res => res.json())
-      .then(setItem); 
+      .then(setItem)
+      .catch(err => console.error("Error loading item:", err));
       
-    // Fetch Booked Dates to block them on the calendar
+    // 2. Fetch Booked Dates (With Safety Nets!)
     fetch(`https://easy-renting-api.onrender.com/api/bookings/item/${id}/dates`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error("Backend route not found");
+        return res.json();
+      })
       .then(data => {
-         if (data.success) {
-           // Convert backend dates into an array of blocked Javascript Date objects
+         // SAFETY CHECK: Ensure data.bookings actually exists and is an array before looping
+         if (data.success && Array.isArray(data.bookings)) {
            let blocked = [];
            data.bookings.forEach(booking => {
-             const daysInBooking = eachDayOfInterval({
-               start: new Date(booking.startDate),
-               end: new Date(booking.endDate)
-             });
-             blocked = [...blocked, ...daysInBooking];
+             try {
+               const daysInBooking = eachDayOfInterval({
+                 start: new Date(booking.startDate),
+                 end: new Date(booking.endDate)
+               });
+               blocked = [...blocked, ...daysInBooking];
+             } catch (e) {
+               console.error("Skipping a corrupted date:", e);
+             }
            });
            setBookedDates(blocked);
          }
-      });
+      })
+      .catch(err => console.warn("Could not load calendar dates. Is the backend route live?", err));
   }, [id]);
 
   const calcRentalFee = () => {
