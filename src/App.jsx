@@ -83,7 +83,15 @@ const ProductDetail = ({ token }) => {
   const [bookedDates, setBookedDates] = useState([]);
   const navigate = useNavigate();
 
-  const currentUserId = token ? JSON.parse(atob(token.split('.')[1])).userId : null;
+  let currentUserId = null;
+  try {
+    if (token) {
+      currentUserId = JSON.parse(atob(token.split('.')[1])).userId;
+    }
+  } catch (error) {
+    console.error("Corrupted token detected, clearing it out.");
+    localStorage.removeItem('token'); // Auto-delete the bad token
+  }
   const SECURITY_DEPOSIT = 500;
 
   useEffect(() => { 
