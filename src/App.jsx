@@ -1,3 +1,6 @@
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { addDays, eachDayOfInterval } from 'date-fns';
 import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
 import './App.css';
@@ -77,15 +80,36 @@ const ProductDetail = ({ token }) => {
   const [showBooking, setShowBooking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [dates, setDates] = useState({ start: '', end: '' });
+  const [bookedDates, setBookedDates] = useState([]);
   const navigate = useNavigate();
 
   const currentUserId = token ? JSON.parse(atob(token.split('.')[1])).userId : null;
   const SECURITY_DEPOSIT = 500;
 
-  useEffect(() => { fetch(`https://easy-renting-api.onrender.com/api/items/${id}`).then(res => res.json()).then(setItem); }, [id]);
-
-  if (!item) return <div className="loader">Refreshing Store...</div>;
-  const isOwner = currentUserId === item.user._id;
+  useEffect(() => { 
+    // Fetch Item Details
+    fetch(`https://easy-renting-api.onrender.com/api/items/${id}`)
+      .then(res => res.json())
+      .then(setItem); 
+      
+    // Fetch Booked Dates to block them on the calendar
+    fetch(`https://easy-renting-api.onrender.com/api/bookings/item/${id}/dates`)
+      .then(res => res.json())
+      .then(data => {
+         if (data.success) {
+           // Convert backend dates into an array of blocked Javascript Date objects
+           let blocked = [];
+           data.bookings.forEach(booking => {
+             const daysInBooking = eachDayOfInterval({
+               start: new Date(booking.startDate),
+               end: new Date(booking.endDate)
+             });
+             blocked = [...blocked, ...daysInBooking];
+           });
+           setBookedDates(blocked);
+         }
+      });
+  }, [id]);
 
   const calcRentalFee = () => {
     if (!dates.start || !dates.end) return 0;
