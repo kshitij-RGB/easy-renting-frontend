@@ -124,19 +124,10 @@ const ProductDetail = ({ token }) => {
         return res.json();
       })
       .then(data => {
-         if (data.success && Array.isArray(data.bookings)) {
-           let blocked = [];
-           data.bookings.forEach(booking => {
-             try {
-               const daysInBooking = eachDayOfInterval({
-                 start: new Date(booking.startDate),
-                 end: new Date(booking.endDate)
-               });
-               blocked = [...blocked, ...daysInBooking];
-             } catch (e) {
-               console.error("Skipping a corrupted date:", e);
-             }
-           });
+         // NEW LOGIC: The backend now gives us an exact array of sold-out date strings
+         if (data.success && Array.isArray(data.fullyBookedDates)) {
+           // Convert the strings ('2026-04-18') back into Javascript Date objects for the calendar
+           const blocked = data.fullyBookedDates.map(dateString => new Date(dateString));
            setBookedDates(blocked);
          }
       })
