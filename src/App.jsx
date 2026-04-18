@@ -1,6 +1,9 @@
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { addDays, eachDayOfInterval } from 'date-fns';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { addDays, eachDayOfInterval } from 'date-fns';
 import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
 import './App.css';
@@ -79,10 +82,11 @@ const ProductDetail = ({ token }) => {
   const [item, setItem] = useState(null);
   const [showBooking, setShowBooking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [dates, setDates] = useState({ start: '', end: '' });
+  const [dates, setDates] = useState({ start: null, end: null });
   const [bookedDates, setBookedDates] = useState([]);
   const navigate = useNavigate();
 
+  // 1. Safe Token Decoder
   let currentUserId = null;
   try {
     if (token) {
@@ -90,25 +94,24 @@ const ProductDetail = ({ token }) => {
     }
   } catch (error) {
     console.error("Corrupted token detected, clearing it out.");
-    localStorage.removeItem('token'); // Auto-delete the bad token
+    localStorage.removeItem('token');
   }
+
   const SECURITY_DEPOSIT = 500;
 
+  // 2. Fetch Item and Booked Dates safely
   useEffect(() => { 
-    // 1. Fetch Item Details
     fetch(`https://easy-renting-api.onrender.com/api/items/${id}`)
       .then(res => res.json())
       .then(setItem)
       .catch(err => console.error("Error loading item:", err));
       
-    // 2. Fetch Booked Dates (With Safety Nets!)
     fetch(`https://easy-renting-api.onrender.com/api/bookings/item/${id}/dates`)
       .then(res => {
         if (!res.ok) throw new Error("Backend route not found");
         return res.json();
       })
       .then(data => {
-         // SAFETY CHECK: Ensure data.bookings actually exists and is an array before looping
          if (data.success && Array.isArray(data.bookings)) {
            let blocked = [];
            data.bookings.forEach(booking => {
@@ -125,12 +128,21 @@ const ProductDetail = ({ token }) => {
            setBookedDates(blocked);
          }
       })
-      .catch(err => console.warn("Could not load calendar dates. Is the backend route live?", err));
+      .catch(err => console.warn("Could not load calendar dates.", err));
   }, [id]);
 
+  // ==========================================
+  // CRITICAL FIX: The Loading Guard
+  // This stops React from reading 'imageUrls' before the item arrives!
+  // ==========================================
+  if (!item) return <div className="loader" style={{textAlign: 'center', marginTop: '50px', color: 'white'}}>Loading item details...</div>;
+
+  const isOwner = currentUserId === item.user?._id || currentUserId === item.user;
+
+  // Calculate using Date objects for the new Calendar
   const calcRentalFee = () => {
     if (!dates.start || !dates.end) return 0;
-    const days = Math.ceil((new Date(dates.end) - new Date(dates.start)) / 86400000) + 1;
+    const days = Math.ceil((dates.end - dates.start) / 86400000) + 1;
     return days > 0 ? days * item.pricePerDay : 0;
   };
 
@@ -152,7 +164,7 @@ const ProductDetail = ({ token }) => {
     const orderData = await orderResponse.json();
 
     const options = {
-      key: 'rzp_test_SeWuMDlMo3ENSg',
+      key: 'rzp_test_SeWuMDlMo3ENSg', 
       amount: orderData.amount,
       currency: orderData.currency,
       name: "EasyRenting",
@@ -198,11 +210,10 @@ const ProductDetail = ({ token }) => {
           <h2 className="price-tag">₹{item.pricePerDay}<span>/day</span></h2>
           <div className="divider"></div>
           <p className="desc">{item.description}</p>
-          <div className="stock-info">Available Stock: {item.availableQuantity} units</div>
           
           <div className="action-area">
             {!isOwner ? (
-              <div className="btn-row"><button onClick={() => setShowBooking(true)} disabled={item.availableQuantity === 0} className="btn-primary">Reserve Now</button></div>
+              <div className="btn-row"><button onClick={() => setShowBooking(true)} className="btn-primary">Check Availability</button></div>
             ) : (
               <div className="owner-section"><h3>Your Product</h3><p className="muted">This is how customers see your listing.</p></div>
             )}
@@ -212,21 +223,53 @@ const ProductDetail = ({ token }) => {
 
       {showBooking && (
         <div className="modal-overlay">
-          <div className="glass-card modal-content" style={{width: '450px'}}>
-            <h3>Schedule Rental</h3>
-            <div className="input-group">
-              <label>Pick-up <input type="date" onChange={e => setDates({...dates, start: e.target.value})} /></label>
-              <label>Return <input type="date" onChange={e => setDates({...dates, end: e.target.value})} /></label>
+          <div className="glass-card modal-content" style={{width: '450px', color: 'white'}}>
+            <h3>Select Rental Dates</h3>
+            
+            <div className="calendar-container" style={{ margin: '20px 0', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px' }}>Pick-up Date</label>
+                <DatePicker 
+                  selected={dates.start} 
+                  onChange={(date) => setDates({ ...dates, start: date, end: null })} 
+                  selectsStart 
+                  startDate={dates.start} 
+                  endDate={dates.end} 
+                  minDate={new Date()} 
+                  excludeDates={bookedDates} 
+                  placeholderText="Select start date"
+                  className="custom-date-input"
+                  style={{ width: '100%', padding: '10px', borderRadius: '5px' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px' }}>Return Date</label>
+                <DatePicker 
+                  selected={dates.end} 
+                  onChange={(date) => setDates({ ...dates, end: date })} 
+                  selectsEnd 
+                  startDate={dates.start} 
+                  endDate={dates.end} 
+                  minDate={dates.start || new Date()} 
+                  excludeDates={bookedDates} 
+                  placeholderText="Select end date"
+                  className="custom-date-input"
+                  disabled={!dates.start} 
+                  style={{ width: '100%', padding: '10px', borderRadius: '5px' }}
+                />
+              </div>
             </div>
+
             {calcRentalFee() > 0 && (
               <div style={{background: 'rgba(0,0,0,0.2)', padding: '15px', borderRadius: '10px', marginTop: '20px'}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '8px'}}><span className="muted">Rental Fee:</span> <span>₹{calcRentalFee()}</span></div>
                 <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '15px', borderBottom: '1px solid #334155', paddingBottom: '15px'}}><span className="muted">Refundable Deposit:</span> <span>₹{SECURITY_DEPOSIT}</span></div>
-                <div style={{display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '1.2rem', color: 'var(--primary)'}}><span>Total Due:</span> <span>₹{calcTotal()}</span></div>
+                <div style={{display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '1.2rem', color: '#6366f1'}}><span>Total Due:</span> <span>₹{calcTotal()}</span></div>
               </div>
             )}
+            
             <div className="modal-actions" style={{display: 'flex', gap: '10px', marginTop: '20px'}}>
-              <button onClick={handlePayment} className="btn-primary" disabled={calcTotal() === 0 || isProcessing} style={{flex: 1}}>{isProcessing ? 'Processing Payment...' : 'Proceed to Payment'}</button>
+              <button onClick={handlePayment} className="btn-primary" disabled={calcTotal() === 0 || isProcessing} style={{flex: 1}}>{isProcessing ? 'Processing...' : 'Proceed to Payment'}</button>
               <button onClick={() => setShowBooking(false)} className="btn-outline" disabled={isProcessing}>Cancel</button>
             </div>
           </div>
