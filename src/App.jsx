@@ -26,6 +26,7 @@ const ImageCarousel = ({ images, isDetail = false }) => (
 const Marketplace = () => {
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [cityFilter, setCityFilter] = useState(''); // NEW: City filter state
   const [category, setCategory] = useState('All');
   const [maxPrice, setMaxPrice] = useState(1000);
   const [sortBy, setSortBy] = useState('newest');
@@ -39,7 +40,11 @@ const Marketplace = () => {
     const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) || item.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = category === 'All' || (item.category || 'Other') === category;
     const matchesPrice = item.pricePerDay <= maxPrice;
-    return matchesSearch && matchesCategory && matchesPrice;
+    
+    // NEW: Check if the item's city matches the filter (case-insensitive)
+    const matchesCity = cityFilter === '' || (item.city && item.city.toLowerCase().includes(cityFilter.toLowerCase()));
+    
+    return matchesSearch && matchesCategory && matchesPrice && matchesCity;
   }).sort((a, b) => {
     if (sortBy === 'price-asc') return a.pricePerDay - b.pricePerDay;
     if (sortBy === 'price-desc') return b.pricePerDay - a.pricePerDay;
@@ -52,7 +57,14 @@ const Marketplace = () => {
       <div className="discovery-layout">
         <aside className="sidebar glass-card">
           <h3 style={{marginTop: 0, marginBottom: '1.5rem'}}>Filters</h3>
-          <div className="filter-group"><label>Search</label><input type="text" placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+          <div className="filter-group"><label>Search</label><input type="text" placeholder="Search items..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+          
+          {/* NEW: City Filter UI */}
+          <div className="filter-group">
+            <label>City / Location</label>
+            <input type="text" placeholder="e.g., Indore, Delhi..." value={cityFilter} onChange={e => setCityFilter(e.target.value)} />
+          </div>
+
           <div className="filter-group"><label>Category</label><select value={category} onChange={e => setCategory(e.target.value)}>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
           <div className="filter-group"><label>Max Price: ₹{maxPrice}/day</label><input type="range" min="1" max="5000" value={maxPrice} onChange={e => setMaxPrice(Number(e.target.value))} className="range-slider" /></div>
           <div className="filter-group"><label>Sort By</label><select value={sortBy} onChange={e => setSortBy(e.target.value)}><option value="newest">Newest First</option><option value="price-asc">Price: Low to High</option><option value="price-desc">Price: High to Low</option></select></div>
@@ -62,7 +74,10 @@ const Marketplace = () => {
             <div key={item._id} onClick={() => navigate(`/item/${item._id}`)} className="card">
               <div className="card-media"><img src={item.imageUrls[0]} alt="p" /><div className="card-price">₹{item.pricePerDay}<span>/day</span></div></div>
               <div className="card-info">
-                <h3>{item.title}</h3><p>{item.description}</p>
+                <h3>{item.title}</h3>
+                {/* NEW: Display City on the Card */}
+                <p className="muted" style={{fontSize: '0.8rem', marginTop: '3px', marginBottom: '8px', color: 'var(--primary)'}}>📍 {item.city || 'Location not specified'}</p>
+                <p>{item.description}</p>
                 <div className="availability-tag"><span className={item.availableQuantity > 0 ? 'available' : 'booked'}>{item.availableQuantity > 0 ? `${item.availableQuantity} available` : 'Rented Out'}</span></div>
               </div>
             </div>
@@ -128,15 +143,10 @@ const ProductDetail = ({ token }) => {
       .catch(err => console.warn("Could not load calendar dates.", err));
   }, [id]);
 
-  // ==========================================
-  // CRITICAL FIX: The Loading Guard
-  // This stops React from reading 'imageUrls' before the item arrives!
-  // ==========================================
   if (!item) return <div className="loader" style={{textAlign: 'center', marginTop: '50px', color: 'white'}}>Loading item details...</div>;
 
   const isOwner = currentUserId === item.user?._id || currentUserId === item.user;
 
-  // Calculate using Date objects for the new Calendar
   const calcRentalFee = () => {
     if (!dates.start || !dates.end) return 0;
     const days = Math.ceil((dates.end - dates.start) / 86400000) + 1;
@@ -205,6 +215,7 @@ const ProductDetail = ({ token }) => {
           <div className="badge">PRODUCT OVERVIEW</div>
           <h1>{item.title}</h1>
           <h2 className="price-tag">₹{item.pricePerDay}<span>/day</span></h2>
+          <p className="muted" style={{marginTop: '5px', color: 'var(--primary)'}}>📍 {item.city || 'Location not specified'}</p>
           <div className="divider"></div>
           <p className="desc">{item.description}</p>
           
@@ -278,7 +289,8 @@ const ProductDetail = ({ token }) => {
 
 const MyListings = ({ token }) => {
   const [myItems, setMyItems] = useState([]);
-  const [formData, setFormData] = useState({ title: '', description: '', pricePerDay: '', quantity: '1', category: 'Other' });
+  // NEW: Added 'city' to initial form state
+  const [formData, setFormData] = useState({ title: '', description: '', pricePerDay: '', quantity: '1', category: 'Other', city: '' });
   const [selectedImages, setSelectedImages] = useState([]); 
   const [previews, setPreviews] = useState([]); 
   const [isUploading, setIsUploading] = useState(false);
@@ -294,14 +306,12 @@ const MyListings = ({ token }) => {
     try {
       const fd = new FormData();
 
-      // 1. Safely add all text fields, ignoring any accidental image fields
       Object.keys(formData).forEach(key => {
         if (key !== 'image' && key !== 'images') {
           fd.append(key, formData[key]);
         }
       });
 
-      // 2. Append the exact 'images' key for Multer array processing
       selectedImages.forEach((file) => {
         fd.append('images', file); 
       });
@@ -312,14 +322,14 @@ const MyListings = ({ token }) => {
         method: editingId ? 'PUT' : 'POST', 
         headers: { 
           'Authorization': `Bearer ${token}` 
-          // Notice there is NO 'Content-Type' here! The browser handles it for files.
         }, 
         body: fd 
       });
 
       if (response.ok) {
         setEditingId(null); 
-        setFormData({title:'', description:'', pricePerDay:'', quantity:'1', category: 'Other'}); 
+        // NEW: Clear city field on successful submit
+        setFormData({title:'', description:'', pricePerDay:'', quantity:'1', category: 'Other', city: ''}); 
         setPreviews([]); 
         setSelectedImages([]); 
         fetchMyItems(); 
@@ -349,18 +359,26 @@ const MyListings = ({ token }) => {
         <form onSubmit={handleSave} className="refined-listing-form">
           <input placeholder="Product Title" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} required />
           <textarea placeholder="Description" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} required />
+          
           <div className="input-grid-2">
             <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} required>
               <option value="Clothing">Clothing</option><option value="Electronics">Electronics</option><option value="Tools">Tools</option><option value="Vehicles">Vehicles</option><option value="Other">Other</option>
             </select>
-            <input type="number" placeholder="Price/Day" value={formData.pricePerDay} onChange={e => setFormData({...formData, pricePerDay: e.target.value})} required />
+            {/* NEW: City Input Field */}
+            <input type="text" placeholder="City (e.g., Indore)" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} required />
           </div>
-          <div className="input-grid-2"><input type="number" placeholder="Quantity" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} required /></div>
+          
+          <div className="input-grid-2">
+            <input type="number" placeholder="Price/Day" value={formData.pricePerDay} onChange={e => setFormData({...formData, pricePerDay: e.target.value})} required />
+            <input type="number" placeholder="Quantity" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} required />
+          </div>
+          
           <input type="file" multiple onChange={e => { const files = Array.from(e.target.files); setSelectedImages([...selectedImages, ...files]); setPreviews([...previews, ...files.map(f => URL.createObjectURL(f))]); }} />
           <div className="preview-strip">{previews.map((u, i) => (<div key={i} className="thumb-box"><img src={u} alt="p" /><button type="button" onClick={() => setPreviews(previews.filter((_, idx) => idx !== i))}>×</button></div>))}</div>
           <div style={{display: 'flex', gap: '10px'}}>
             <button type="submit" disabled={isUploading} className="btn-primary" style={{flex: 1}}>{isUploading ? 'Uploading...' : (editingId ? 'Update Listing' : 'Publish Listing')}</button>
-            {editingId && <button type="button" onClick={() => { setEditingId(null); setFormData({title:'', description:'', pricePerDay:'', quantity:'1', category: 'Other'}); setPreviews([]); setSelectedImages([]); }} className="btn-outline">Cancel</button>}
+            {/* NEW: Clear city field on cancel */}
+            {editingId && <button type="button" onClick={() => { setEditingId(null); setFormData({title:'', description:'', pricePerDay:'', quantity:'1', category: 'Other', city: ''}); setPreviews([]); setSelectedImages([]); }} className="btn-outline">Cancel</button>}
           </div>
         </form>
       </div>
@@ -370,9 +388,10 @@ const MyListings = ({ token }) => {
         {myItems.map(item => (
           <div key={item._id} className="row-item">
             <div className="row-thumb"><img src={item.imageUrls[0]} alt="t" /></div>
-            <div className="row-info"><h4>{item.title} <span style={{fontSize: '0.8rem', color: 'var(--primary)'}}>({item.category || 'Other'})</span></h4><p>₹{item.pricePerDay}/day • {item.quantity} stock</p></div>
+            <div className="row-info"><h4>{item.title} <span style={{fontSize: '0.8rem', color: 'var(--primary)'}}>({item.category || 'Other'})</span></h4><p>₹{item.pricePerDay}/day • {item.quantity} stock • 📍 {item.city || 'N/A'}</p></div>
             <div className="row-actions">
-              <button onClick={() => { setEditingId(item._id); setFormData({title:item.title, description:item.description, pricePerDay:item.pricePerDay, quantity:item.quantity, category: item.category || 'Other'}); setPreviews(item.imageUrls); window.scrollTo({top: 0, behavior: 'smooth'}); }} className="btn-edit">Edit</button>
+              {/* NEW: Populate city field when editing */}
+              <button onClick={() => { setEditingId(item._id); setFormData({title:item.title, description:item.description, pricePerDay:item.pricePerDay, quantity:item.quantity, category: item.category || 'Other', city: item.city || ''}); setPreviews(item.imageUrls); window.scrollTo({top: 0, behavior: 'smooth'}); }} className="btn-edit">Edit</button>
               <button onClick={() => handleDelete(item._id)} className="btn-danger">Delete</button>
             </div>
           </div>
