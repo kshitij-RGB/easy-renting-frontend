@@ -26,22 +26,36 @@ const ImageCarousel = ({ images, isDetail = false }) => (
 const Marketplace = () => {
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [cityFilter, setCityFilter] = useState(''); // NEW: City filter state
+  const [cityFilter, setCityFilter] = useState('');
   const [category, setCategory] = useState('All');
-  const [maxPrice, setMaxPrice] = useState(1000);
+  const [maxPrice, setMaxPrice] = useState(10000); // Default high, will auto-adjust
   const [sortBy, setSortBy] = useState('newest');
   const navigate = useNavigate();
 
-  useEffect(() => { fetch('https://easy-renting-api.onrender.com/api/items').then(res => res.json()).then(setItems); }, []);
+  useEffect(() => { 
+    fetch('https://easy-renting-api.onrender.com/api/items')
+      .then(res => res.json())
+      .then(data => {
+        setItems(data);
+        // Automatically set the slider to the highest price in the database!
+        if (data.length > 0) {
+          const highestPrice = Math.max(...data.map(item => item.pricePerDay));
+          setMaxPrice(highestPrice);
+        }
+      }); 
+  }, []);
 
   const categories = ['All', 'Clothing', 'Electronics', 'Tools', 'Vehicles', 'Other'];
+
+  // Calculate the dynamic max for the slider's upper limit
+  const highestPriceInDatabase = items.length > 0 
+    ? Math.max(...items.map(item => item.pricePerDay)) 
+    : 10000;
 
   const filteredItems = items.filter(item => {
     const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) || item.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = category === 'All' || (item.category || 'Other') === category;
     const matchesPrice = item.pricePerDay <= maxPrice;
-    
-    // NEW: Check if the item's city matches the filter (case-insensitive)
     const matchesCity = cityFilter === '' || (item.city && item.city.toLowerCase().includes(cityFilter.toLowerCase()));
     
     return matchesSearch && matchesCategory && matchesPrice && matchesCity;
@@ -59,14 +73,18 @@ const Marketplace = () => {
           <h3 style={{marginTop: 0, marginBottom: '1.5rem'}}>Filters</h3>
           <div className="filter-group"><label>Search</label><input type="text" placeholder="Search items..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
           
-          {/* NEW: City Filter UI */}
           <div className="filter-group">
             <label>City / Location</label>
             <input type="text" placeholder="e.g., Indore, Delhi..." value={cityFilter} onChange={e => setCityFilter(e.target.value)} />
           </div>
 
           <div className="filter-group"><label>Category</label><select value={category} onChange={e => setCategory(e.target.value)}>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-          <div className="filter-group"><label>Max Price: ₹{maxPrice}/day</label><input type="range" min="1" max="5000" value={maxPrice} onChange={e => setMaxPrice(Number(e.target.value))} className="range-slider" /></div>
+          
+          <div className="filter-group">
+            <label>Max Price: ₹{maxPrice}/day</label>
+            <input type="range" min="1" max={highestPriceInDatabase} value={maxPrice} onChange={e => setMaxPrice(Number(e.target.value))} className="range-slider" />
+          </div>
+          
           <div className="filter-group"><label>Sort By</label><select value={sortBy} onChange={e => setSortBy(e.target.value)}><option value="newest">Newest First</option><option value="price-asc">Price: Low to High</option><option value="price-desc">Price: High to Low</option></select></div>
         </aside>
         <div className="main-grid">
@@ -75,7 +93,6 @@ const Marketplace = () => {
               <div className="card-media"><img src={item.imageUrls[0]} alt="p" /><div className="card-price">₹{item.pricePerDay}<span>/day</span></div></div>
               <div className="card-info">
                 <h3>{item.title}</h3>
-                {/* NEW: Display City on the Card */}
                 <p className="muted" style={{fontSize: '0.8rem', marginTop: '3px', marginBottom: '8px', color: 'var(--primary)'}}>📍 {item.city || 'Location not specified'}</p>
                 <p>{item.description}</p>
                 <div className="availability-tag"><span className={item.availableQuantity > 0 ? 'available' : 'booked'}>{item.availableQuantity > 0 ? `${item.availableQuantity} available` : 'Rented Out'}</span></div>
@@ -280,7 +297,6 @@ const ProductDetail = ({ token }) => {
 
 const MyListings = ({ token }) => {
   const [myItems, setMyItems] = useState([]);
-  // NEW: Added 'city' to initial form state
   const [formData, setFormData] = useState({ title: '', description: '', pricePerDay: '', quantity: '1', category: 'Other', city: '' });
   const [selectedImages, setSelectedImages] = useState([]); 
   const [previews, setPreviews] = useState([]); 
@@ -319,7 +335,6 @@ const MyListings = ({ token }) => {
 
       if (response.ok) {
         setEditingId(null); 
-        // NEW: Clear city field on successful submit
         setFormData({title:'', description:'', pricePerDay:'', quantity:'1', category: 'Other', city: ''}); 
         setPreviews([]); 
         setSelectedImages([]); 
@@ -355,7 +370,6 @@ const MyListings = ({ token }) => {
             <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} required>
               <option value="Clothing">Clothing</option><option value="Electronics">Electronics</option><option value="Tools">Tools</option><option value="Vehicles">Vehicles</option><option value="Other">Other</option>
             </select>
-            {/* NEW: City Input Field */}
             <input type="text" placeholder="City (e.g., Indore)" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} required />
           </div>
           
@@ -368,7 +382,6 @@ const MyListings = ({ token }) => {
           <div className="preview-strip">{previews.map((u, i) => (<div key={i} className="thumb-box"><img src={u} alt="p" /><button type="button" onClick={() => setPreviews(previews.filter((_, idx) => idx !== i))}>×</button></div>))}</div>
           <div style={{display: 'flex', gap: '10px'}}>
             <button type="submit" disabled={isUploading} className="btn-primary" style={{flex: 1}}>{isUploading ? 'Uploading...' : (editingId ? 'Update Listing' : 'Publish Listing')}</button>
-            {/* NEW: Clear city field on cancel */}
             {editingId && <button type="button" onClick={() => { setEditingId(null); setFormData({title:'', description:'', pricePerDay:'', quantity:'1', category: 'Other', city: ''}); setPreviews([]); setSelectedImages([]); }} className="btn-outline">Cancel</button>}
           </div>
         </form>
@@ -381,7 +394,6 @@ const MyListings = ({ token }) => {
             <div className="row-thumb"><img src={item.imageUrls[0]} alt="t" /></div>
             <div className="row-info"><h4>{item.title} <span style={{fontSize: '0.8rem', color: 'var(--primary)'}}>({item.category || 'Other'})</span></h4><p>₹{item.pricePerDay}/day • {item.quantity} stock • 📍 {item.city || 'N/A'}</p></div>
             <div className="row-actions">
-              {/* NEW: Populate city field when editing */}
               <button onClick={() => { setEditingId(item._id); setFormData({title:item.title, description:item.description, pricePerDay:item.pricePerDay, quantity:item.quantity, category: item.category || 'Other', city: item.city || ''}); setPreviews(item.imageUrls); window.scrollTo({top: 0, behavior: 'smooth'}); }} className="btn-edit">Edit</button>
               <button onClick={() => handleDelete(item._id)} className="btn-danger">Delete</button>
             </div>
